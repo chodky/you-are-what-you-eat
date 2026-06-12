@@ -1,0 +1,16 @@
+{
+  "name": "You are what you eat",
+  "short_name": "食事記録",
+  "description": "食事・トレーニングの記録とスコアリングを行うローカル完結ビューア",
+  "lang": "ja",
+  "start_url": "./viewer.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

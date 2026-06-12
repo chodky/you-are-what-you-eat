@@ -1,0 +1,34 @@
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Editors
+.vscode/
+.idea/
+*.code-workspace
+
+# Personal data (絶対にコミットしない)
+data.json
+my_data.json
+personal_*.json
+*.private.json
+
+# Backups
+*.bak
+*.backup
+backup/
+
+# Logs
+*.log
+
+# Temp
+.tmp/
+tmp/
+*.tmp
+
+# Node (もし将来ビルド工程を入れる場合)
+node_modules/
+dist/
+build/
