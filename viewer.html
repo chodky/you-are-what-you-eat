@@ -853,6 +853,26 @@
   </div>
 </div>
 
+<!-- ============ Full-data pasted into Import box Modal ============ -->
+<div id="fulldata-modal" class="hidden fixed inset-0 z-[68] backdrop items-center justify-center p-4">
+  <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-xl w-full overflow-hidden">
+    <header class="px-5 py-3 border-b border-slate-800 bg-slate-800/50">
+      <h2 class="font-bold text-lg">🗂️ これは全データ（data.json）です</h2>
+      <p class="text-xs text-slate-300 mt-1">取り込みタブは「1件の追記」用です。全データとして読み込みますか？</p>
+    </header>
+    <div class="p-5 text-sm text-slate-300 space-y-3">
+      <div>貼り付けた内容は <code class="bg-slate-800 px-1 rounded">schema_version</code> / <code class="bg-slate-800 px-1 rounded">profile</code> などを含む <span class="font-semibold text-slate-100">data.json 全体</span>です。「全データとして読み込む」を選ぶと <span class="text-amber-300 font-semibold">現在の保存データはすべて置き換わります</span>。</div>
+      <div id="fulldata-info" class="text-xs bg-slate-800/50 rounded p-3 font-mono text-slate-400">—</div>
+      <div class="text-xs text-slate-400">どうしますか？</div>
+    </div>
+    <footer class="px-5 py-3 border-t border-slate-800 flex flex-wrap gap-2">
+      <button id="btn-fulldata-load" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded text-sm font-medium">✅ 全データとして読み込む</button>
+      <button id="btn-fulldata-file" class="px-4 py-2 bg-sky-800 hover:bg-sky-700 rounded text-sm">📂 data.jsonファイルから読み込む</button>
+      <button id="btn-fulldata-cancel" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm ml-auto">キャンセル</button>
+    </footer>
+  </div>
+</div>
+
 <!-- ============ Schema Validation / Correction Modal ============ -->
 <div id="schema-modal" class="hidden fixed inset-0 z-[65] backdrop items-center justify-center p-4">
   <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-2xl w-full max-h-[88vh] overflow-hidden flex flex-col">
@@ -1618,6 +1638,26 @@ function closeWrongKindModal() {
   pendingWrongKind = null;
 }
 window.closeWrongKindModal = closeWrongKindModal;
+
+// 全データ(data.json)を取り込みタブに貼った時のガード（コピペでフルセットアップ可能にする）
+let pendingFullData = null;
+function showFullDataModal(parsed) {
+  pendingFullData = parsed;
+  const info = document.getElementById('fulldata-info');
+  const logs = (parsed.daily_logs || []).length;
+  const metrics = (parsed.body_metrics || []).length;
+  const name = parsed.profile?.user_name || '(名称なし)';
+  const sv = parsed.schema_version || '?';
+  info.innerHTML = `<div>schema_version: <span class="text-emerald-400">${sv}</span></div><div>profile: ${name}</div><div>daily_logs: ${logs}件 / body_metrics: ${metrics}件</div>`;
+  const m = document.getElementById('fulldata-modal');
+  m.classList.remove('hidden'); m.classList.add('modal-open');
+}
+function closeFullDataModal() {
+  const m = document.getElementById('fulldata-modal');
+  m.classList.add('hidden'); m.classList.remove('modal-open');
+  pendingFullData = null;
+}
+window.closeFullDataModal = closeFullDataModal;
 
 // ============ Schema validation & auto-correction ============
 // 既知のキー名ズレ（AIが補正しがちなパターン）
@@ -2806,6 +2846,14 @@ function wireEvents() {
       return;
     }
 
+    // 全データ(data.json)が貼られたら専用ガードへ（payload追記とは別フロー）
+    if (detectFileKind(parsed) === 'full') {
+      showFullDataModal(parsed);
+      status.textContent = '🗂️ data.json 形式を検出しました（確認モーダル参照）';
+      status.className = 'text-sm text-sky-400';
+      return;
+    }
+
     const result = validatePayload(parsed);
     const logCorrection = (count) => {
       const li = document.createElement('li');
@@ -3009,6 +3057,60 @@ function wireEvents() {
     }, 100);
   });
   document.getElementById('btn-wrong-cancel').addEventListener('click', closeWrongKindModal);
+
+  // Full-data modal buttons（data.json全体を取り込みタブに貼った時のガード）
+  document.getElementById('btn-fulldata-load').addEventListener('click', () => {
+    if (!pendingFullData) { closeFullDataModal(); return; }
+    const parsed = pendingFullData;
+    closeFullDataModal();
+    const status = document.getElementById('import-status');
+    const cancelLoad = () => { status.textContent = '⚠ 全データ読み込みをキャンセルしました'; status.className = 'text-sm text-yellow-400'; };
+
+    // 既存データがある場合は強い上書き確認（loadSample / clearAll と同等の二重確認）
+    const existingLogs = (data.daily_logs || []).length;
+    const existingMetrics = (data.body_metrics || []).length;
+    if (existingLogs > 0 || existingMetrics > 0) {
+      const msg = `⚠ 既存データが上書きされます\n\n現在の保存内容:\n  ・食事ログ: ${existingLogs} 件\n  ・体組成: ${existingMetrics} 件\n\nこれらは完全に消去され、貼り付けた data.json に置き換わります。\n復元はできません。\n\n本当に実行しますか？`;
+      if (!confirm(msg)) { cancelLoad(); return; }
+      if (!confirm('最終確認：現在のデータを破棄して全データを置き換えますか？')) { cancelLoad(); return; }
+    }
+
+    // ファイル読込と同じ検証ルート（schemaキーの自動補正を維持）
+    const result = validateFullData(parsed);
+    const finish = (obj, correctedCount) => {
+      data = migrateData(obj); saveData(); renderAll();
+      document.getElementById('import-textarea').value = '';
+      status.textContent = correctedCount != null
+        ? `✅ 全データを読み込みました（schema違反 ${correctedCount}件 を自動補正）`
+        : '✅ 全データを読み込みました';
+      status.className = 'text-sm text-emerald-400';
+      switchTab('dashboard');
+    };
+
+    if (result.corrections.length === 0 && result.errors.length === 0) {
+      finish(parsed, null);
+      return;
+    }
+    showSchemaModal(
+      result, 'full',
+      () => {
+        const li = document.createElement('li');
+        li.textContent = `[${new Date().toLocaleTimeString()}] data.json 取り込み時に schema key を ${result.corrections.length} 件 自動補正しました`;
+        document.getElementById('import-log')?.prepend(li);
+        finish(result.corrected, result.corrections.length);
+      },
+      () => {
+        finish(parsed, null);
+        status.textContent = '⚠ 補正せず全データを読み込みました（表示崩れの可能性あり）';
+        status.className = 'text-sm text-amber-400';
+      }
+    );
+  });
+  document.getElementById('btn-fulldata-file').addEventListener('click', () => {
+    closeFullDataModal();
+    document.getElementById('file-input').click();
+  });
+  document.getElementById('btn-fulldata-cancel').addEventListener('click', closeFullDataModal);
 }
 
 // ============ Backup reminder ============
