@@ -749,6 +749,10 @@
           <button id="btn-import" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded text-sm">取り込む</button>
           <span id="import-status" class="text-sm"></span>
         </div>
+        <div id="undo-import-box" class="hidden mt-3 bg-slate-800/30 rounded-lg p-3 text-xs text-slate-400 space-y-2">
+          <div>↩️ 直前の取り込み前の状態が端末内に退避されています（この端末のブラウザ内のみ）。</div>
+          <button id="btn-undo-import" class="px-3 py-2 bg-sky-700 hover:bg-sky-600 rounded text-sm">↩️ 直前の取り込みを取り消す</button>
+        </div>
       </div>
 
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
@@ -858,17 +862,19 @@
   <div class="bg-slate-900 border border-slate-700 rounded-xl max-w-xl w-full overflow-hidden">
     <header class="px-5 py-3 border-b border-slate-800 bg-slate-800/50">
       <h2 class="font-bold text-lg">🗂️ これは全データ（data.json）です</h2>
-      <p class="text-xs text-slate-300 mt-1">取り込みタブは「1件の追記」用です。全データとして読み込みますか？</p>
+      <p class="text-xs text-slate-300 mt-1">取り込み方法を選んでください</p>
     </header>
     <div class="p-5 text-sm text-slate-300 space-y-3">
-      <div>貼り付けた内容は <code class="bg-slate-800 px-1 rounded">schema_version</code> / <code class="bg-slate-800 px-1 rounded">profile</code> などを含む <span class="font-semibold text-slate-100">data.json 全体</span>です。「全データとして読み込む」を選ぶと <span class="text-amber-300 font-semibold">現在の保存データはすべて置き換わります</span>。</div>
-      <div id="fulldata-info" class="text-xs bg-slate-800/50 rounded p-3 font-mono text-slate-400">—</div>
-      <div class="text-xs text-slate-400">どうしますか？</div>
+      <div>貼り付けた内容は <code class="bg-slate-800 px-1 rounded">schema_version</code> / <code class="bg-slate-800 px-1 rounded">profile</code> などを含む <span class="font-semibold text-slate-100">data.json 全体</span>です。</div>
+      <div id="fulldata-info" class="text-xs bg-slate-800/50 rounded p-3 text-slate-400 space-y-1">—</div>
+      <div class="text-xs text-slate-500">「統合」は既存の食事記録を残したまま合流します。「完全復元」は現在のデータをすべて置き換えます（どちらも直前の状態は自動退避され、取り消せます）。</div>
     </div>
-    <footer class="px-5 py-3 border-t border-slate-800 flex flex-wrap gap-2">
-      <button id="btn-fulldata-load" class="px-4 py-2 bg-emerald-700 hover:bg-emerald-600 rounded text-sm font-medium">✅ 全データとして読み込む</button>
-      <button id="btn-fulldata-file" class="px-4 py-2 bg-sky-800 hover:bg-sky-700 rounded text-sm">📂 data.jsonファイルから読み込む</button>
-      <button id="btn-fulldata-cancel" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm ml-auto">キャンセル</button>
+    <footer class="px-5 py-3 border-t border-slate-800 space-y-2">
+      <button id="btn-fulldata-merge" class="w-full px-4 py-2.5 bg-emerald-700 hover:bg-emerald-600 rounded text-sm font-medium">✅ 既存データを残して統合する（推奨）</button>
+      <div class="flex gap-2">
+        <button id="btn-fulldata-replace" class="px-4 py-2 bg-red-800/70 hover:bg-red-700 rounded text-sm">⚠️ 完全復元（全置換）</button>
+        <button id="btn-fulldata-cancel" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm ml-auto">キャンセル</button>
+      </div>
     </footer>
   </div>
 </div>
@@ -963,6 +969,7 @@
 // ============ Constants ============
 const STORAGE_KEY = 'ywe_data_v1';
 const TRASH_KEY = 'ywe_data_trash'; // 「全データ消去」直前のデータ退避先（端末内のみ・Safari設定からの削除等では消える）
+const IMPORT_SNAPSHOT_KEY = 'ywe_pre_import'; // 全データ取り込み直前の退避先（消去undoとは別枠・上書き事故を防ぐ）
 let data;
 let currentTab = 'dashboard';
 let currentCalDate = new Date();
@@ -1644,11 +1651,20 @@ let pendingFullData = null;
 function showFullDataModal(parsed) {
   pendingFullData = parsed;
   const info = document.getElementById('fulldata-info');
-  const logs = (parsed.daily_logs || []).length;
-  const metrics = (parsed.body_metrics || []).length;
+  const incLogs = (parsed.daily_logs || []).length;
+  const incMetrics = (parsed.body_metrics || []).length;
+  const incTargets = (parsed.targets_history || []).length;
+  const incWk = (parsed.workouts_catalog || []).length;
+  const curLogs = (data.daily_logs || []).length;
+  const curMetrics = (data.body_metrics || []).length;
   const name = parsed.profile?.user_name || '(名称なし)';
   const sv = parsed.schema_version || '?';
-  info.innerHTML = `<div>schema_version: <span class="text-emerald-400">${sv}</span></div><div>profile: ${name}</div><div>daily_logs: ${logs}件 / body_metrics: ${metrics}件</div>`;
+  const { stats } = mergeFullData(data, parsed); // 統合プレビュー
+  info.innerHTML =
+    `<div>貼り付け: schema <span class="text-emerald-400">${sv}</span> ／ profile: <span class="text-slate-200">${name}</span></div>` +
+    `<div>食事記録: 現在 <span class="text-slate-200">${curLogs}</span>日 ／ 取込 ${incLogs}日 → 統合で <span class="text-emerald-400">+${stats.logs_added}新規</span> / ${stats.logs_updated}更新</div>` +
+    `<div>体組成: 現在 <span class="text-slate-200">${curMetrics}</span>件 ／ 取込 ${incMetrics}件 → 統合で <span class="text-emerald-400">+${stats.metrics_added}新規</span> / ${stats.metrics_updated}更新</div>` +
+    `<div>目標履歴 ${incTargets}件 ／ 運動カタログ ${incWk}件</div>`;
   const m = document.getElementById('fulldata-modal');
   m.classList.remove('hidden'); m.classList.add('modal-open');
 }
@@ -1658,6 +1674,83 @@ function closeFullDataModal() {
   pendingFullData = null;
 }
 window.closeFullDataModal = closeFullDataModal;
+
+// 全データ取り込み：フィールド単位マージ（欠落・空文字・null は既存値を保持）
+function mergeFields(baseObj, incObj) {
+  const out = deepClone(baseObj || {});
+  Object.keys(incObj || {}).forEach(k => {
+    if (k === '__proto__' || k === 'constructor' || k === 'prototype') return; // プロトタイプ汚染防止
+    const v = incObj[k];
+    if (v === undefined || v === null || v === '') return; // 未入力扱い → 既存保持
+    if (typeof v === 'object' && !Array.isArray(v) && out[k] && typeof out[k] === 'object' && !Array.isArray(out[k])) {
+      out[k] = mergeFields(out[k], v); // ネストオブジェクトは再帰マージ
+    } else {
+      out[k] = v;
+    }
+  });
+  return out;
+}
+
+// 既存データを保持したまま incoming(フルdata.json)を非破壊で統合
+function mergeFullData(existing, incoming) {
+  const base = deepClone(existing);
+  const stats = { logs_added: 0, logs_updated: 0, metrics_added: 0, metrics_updated: 0 };
+  base.daily_logs = base.daily_logs || [];
+  (incoming.daily_logs || []).forEach(log => {
+    if (!log || !log.date) return;
+    const i = base.daily_logs.findIndex(l => l.date === log.date);
+    if (i >= 0) { base.daily_logs[i] = log; stats.logs_updated++; } // 1日=丸ごと置換（食事項目にidが無く日単位がスキーマの最小単位）
+    else { base.daily_logs.push(log); stats.logs_added++; }
+  });
+  base.body_metrics = base.body_metrics || [];
+  (incoming.body_metrics || []).forEach(bm => {
+    if (!bm || !bm.measured_at) return;
+    const key = String(bm.measured_at).trim();
+    const i = base.body_metrics.findIndex(x => String(x.measured_at).trim() === key);
+    if (i >= 0) { base.body_metrics[i] = bm; stats.metrics_updated++; } // 同一測定日時は重複排除
+    else { base.body_metrics.push(bm); stats.metrics_added++; }
+  });
+  base.workouts_catalog = base.workouts_catalog || [];
+  (incoming.workouts_catalog || []).forEach(w => {
+    if (!w || !w.id) return;
+    const i = base.workouts_catalog.findIndex(x => x.id === w.id);
+    if (i >= 0) base.workouts_catalog[i] = w; else base.workouts_catalog.push(w);
+  });
+  base.targets_history = base.targets_history || [];
+  (incoming.targets_history || []).forEach(t => {
+    if (!t || !t.effective_from) return;
+    const i = base.targets_history.findIndex(x => x.effective_from === t.effective_from);
+    if (i >= 0) base.targets_history[i] = t; else base.targets_history.push(t);
+  });
+  base.profile = mergeFields(base.profile, incoming.profile);
+  base.settings = mergeFields(base.settings, incoming.settings);
+  return { data: migrateData(base), stats }; // migrateData で構造の欠落だけ補完（既存値は保持）
+}
+
+// 取り込みを安全にコミット（退避 → 保存。退避に失敗したら取り込みを中止）
+function commitImport(newData) {
+  try {
+    localStorage.setItem(IMPORT_SNAPSHOT_KEY, JSON.stringify(data));
+  } catch (e) {
+    return { ok: false, error: '退避（自動バックアップ）の保存に失敗したため取り込みを中止しました: ' + e.message };
+  }
+  const prev = data;
+  try {
+    data = newData;
+    saveData();
+  } catch (e) {
+    data = prev; // ロールバック（変更を適用しない）
+    return { ok: false, error: '保存に失敗しました（変更は適用されていません）: ' + e.message };
+  }
+  renderAll();
+  renderUndoImport();
+  return { ok: true };
+}
+
+function renderUndoImport() {
+  const box = document.getElementById('undo-import-box');
+  if (box) box.classList.toggle('hidden', !localStorage.getItem(IMPORT_SNAPSHOT_KEY));
+}
 
 // ============ Schema validation & auto-correction ============
 // 既知のキー名ズレ（AIが補正しがちなパターン）
@@ -3059,58 +3152,60 @@ function wireEvents() {
   document.getElementById('btn-wrong-cancel').addEventListener('click', closeWrongKindModal);
 
   // Full-data modal buttons（data.json全体を取り込みタブに貼った時のガード）
-  document.getElementById('btn-fulldata-load').addEventListener('click', () => {
+  // 統合（既定・非破壊）：既存の記録を残してマージ
+  document.getElementById('btn-fulldata-merge').addEventListener('click', () => {
     if (!pendingFullData) { closeFullDataModal(); return; }
     const parsed = pendingFullData;
     closeFullDataModal();
     const status = document.getElementById('import-status');
-    const cancelLoad = () => { status.textContent = '⚠ 全データ読み込みをキャンセルしました'; status.className = 'text-sm text-yellow-400'; };
-
-    // 既存データがある場合は強い上書き確認（loadSample / clearAll と同等の二重確認）
+    const { data: merged, stats } = mergeFullData(data, parsed);
+    const res = commitImport(merged);
+    if (!res.ok) { status.textContent = '❌ ' + res.error; status.className = 'text-sm text-red-400'; return; }
+    document.getElementById('import-textarea').value = '';
+    const li = document.createElement('li');
+    li.innerHTML = `[${new Date().toLocaleTimeString()}] <span class="text-emerald-400">全データを統合</span>（食事 +${stats.logs_added}/${stats.logs_updated}更新・体組成 +${stats.metrics_added}/${stats.metrics_updated}更新）`;
+    document.getElementById('import-log')?.prepend(li);
+    status.textContent = `✅ 統合しました（食事 +${stats.logs_added}新規/${stats.logs_updated}更新・体組成 +${stats.metrics_added}新規/${stats.metrics_updated}更新）`;
+    status.className = 'text-sm text-emerald-400';
+    switchTab('dashboard');
+  });
+  // 完全復元（破壊的）：現在のデータを全置換。退避があるので取り消し可能
+  document.getElementById('btn-fulldata-replace').addEventListener('click', () => {
+    if (!pendingFullData) { closeFullDataModal(); return; }
+    const parsed = pendingFullData;
     const existingLogs = (data.daily_logs || []).length;
     const existingMetrics = (data.body_metrics || []).length;
-    if (existingLogs > 0 || existingMetrics > 0) {
-      const msg = `⚠ 既存データが上書きされます\n\n現在の保存内容:\n  ・食事ログ: ${existingLogs} 件\n  ・体組成: ${existingMetrics} 件\n\nこれらは完全に消去され、貼り付けた data.json に置き換わります。\n復元はできません。\n\n本当に実行しますか？`;
-      if (!confirm(msg)) { cancelLoad(); return; }
-      if (!confirm('最終確認：現在のデータを破棄して全データを置き換えますか？')) { cancelLoad(); return; }
-    }
-
-    // ファイル読込と同じ検証ルート（schemaキーの自動補正を維持）
-    const result = validateFullData(parsed);
-    const finish = (obj, correctedCount) => {
-      data = migrateData(obj); saveData(); renderAll();
-      document.getElementById('import-textarea').value = '';
-      status.textContent = correctedCount != null
-        ? `✅ 全データを読み込みました（schema違反 ${correctedCount}件 を自動補正）`
-        : '✅ 全データを読み込みました';
-      status.className = 'text-sm text-emerald-400';
-      switchTab('dashboard');
-    };
-
-    if (result.corrections.length === 0 && result.errors.length === 0) {
-      finish(parsed, null);
-      return;
-    }
-    showSchemaModal(
-      result, 'full',
-      () => {
-        const li = document.createElement('li');
-        li.textContent = `[${new Date().toLocaleTimeString()}] data.json 取り込み時に schema key を ${result.corrections.length} 件 自動補正しました`;
-        document.getElementById('import-log')?.prepend(li);
-        finish(result.corrected, result.corrections.length);
-      },
-      () => {
-        finish(parsed, null);
-        status.textContent = '⚠ 補正せず全データを読み込みました（表示崩れの可能性あり）';
-        status.className = 'text-sm text-amber-400';
-      }
-    );
-  });
-  document.getElementById('btn-fulldata-file').addEventListener('click', () => {
+    const incLogs = (parsed.daily_logs || []).length;
+    const incMetrics = (parsed.body_metrics || []).length;
+    const msg = `⚠ 完全復元（全置換）\n\n現在のデータは破棄され、貼り付けた内容に置き換わります。\n  ・食事記録: ${existingLogs}日 → ${incLogs}日\n  ・体組成: ${existingMetrics}件 → ${incMetrics}件\n\n（直前の状態は自動退避され「直前の取り込みを取り消す」で戻せます）\n\n実行しますか？`;
+    if (!confirm(msg)) return;
     closeFullDataModal();
-    document.getElementById('file-input').click();
+    const status = document.getElementById('import-status');
+    const res = commitImport(migrateData(parsed));
+    if (!res.ok) { status.textContent = '❌ ' + res.error; status.className = 'text-sm text-red-400'; return; }
+    document.getElementById('import-textarea').value = '';
+    const li = document.createElement('li');
+    li.innerHTML = `[${new Date().toLocaleTimeString()}] <span class="text-amber-400">全データを完全復元（全置換）</span>`;
+    document.getElementById('import-log')?.prepend(li);
+    status.textContent = '✅ 全データを復元しました（全置換）';
+    status.className = 'text-sm text-emerald-400';
+    switchTab('dashboard');
   });
   document.getElementById('btn-fulldata-cancel').addEventListener('click', closeFullDataModal);
+
+  // 取り込みのやり直し（退避スロットから復元）
+  document.getElementById('btn-undo-import')?.addEventListener('click', () => {
+    const raw = localStorage.getItem(IMPORT_SNAPSHOT_KEY);
+    if (!raw) { renderUndoImport(); return; }
+    let restored;
+    try { restored = JSON.parse(raw); }
+    catch (e) { alert('❌ 退避データの読み込みに失敗しました: ' + e.message); return; }
+    data = restored; saveData(); renderAll();
+    localStorage.removeItem(IMPORT_SNAPSHOT_KEY);
+    renderUndoImport();
+    const status = document.getElementById('import-status');
+    if (status) { status.textContent = '✅ 直前の取り込みを取り消しました'; status.className = 'text-sm text-emerald-400'; }
+  });
 }
 
 // ============ Backup reminder ============
@@ -3208,6 +3303,7 @@ wireTheme();
 switchTab('dashboard');
 renderBackupInfo();
 renderUndoClear();
+renderUndoImport();
 maybeShowOnboarding();
 </script>
 </body>
