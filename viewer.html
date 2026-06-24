@@ -1568,8 +1568,9 @@ function renderSettings() {
   // tolerance buttons highlight
   const tol = data.settings?.achievement_tolerance_pct ?? 10;
   document.querySelectorAll('.tol-btn').forEach(b => {
-    if (parseInt(b.dataset.tol) === tol) b.classList.add('bg-emerald-700');
-    else b.classList.remove('bg-emerald-700');
+    const active = parseInt(b.dataset.tol) === tol;
+    b.classList.toggle('bg-emerald-700', active);
+    b.classList.toggle('bg-slate-800', !active); // 選択中は bg-slate-800 を外す（CSS順で slate が emerald に勝ちハイライトが消えるため）
   });
 
   // Current targets
