@@ -756,6 +756,13 @@
       </div>
 
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <h2 class="font-semibold mb-2">📋 InBody結果を取り込む</h2>
+        <p class="text-sm text-slate-400 mb-3">下のボタンでプロンプトをコピー → Claude / ChatGPT に貼り、InBody結果のスクショを渡すと <code class="bg-slate-800 px-1 rounded text-xs">body_metrics</code> JSON が返ります。それを上の「JSONを貼り付けて取り込み」に貼って取り込んでください。</p>
+        <button id="btn-copy-inbody" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded text-sm">📋 InBody取り込みプロンプトをコピー</button>
+        <span id="inbody-copy-status" class="text-sm ml-2"></span>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
         <h2 class="font-semibold mb-2">取り込みログ</h2>
         <ul id="import-log" class="text-sm text-slate-300 space-y-1 max-h-64 overflow-y-auto"></ul>
       </div>
@@ -2131,6 +2138,69 @@ function closeBriefingModal() {
 }
 window.closeBriefingModal = closeBriefingModal;
 
+// ===== InBody 取り込みプロンプト =====
+// このテンプレートが body_metrics ペイロードの唯一の定義（single source of truth）。
+// コピー用プロンプトの JSON 部はここから JSON.stringify で生成し、スキーマとの不一致を防ぐ。
+const BODY_METRICS_TEMPLATE = {
+  type: 'body_metrics',
+  payload: {
+    measured_at: '',
+    measurement_type: 'InBody',
+    weight_kg: null,
+    body_fat_pct: null,
+    muscle_mass_kg: null,
+    tbw_kg: null,
+    ecw_tbw: null,
+    waist_cm: null,
+    condition_tags: [],
+    note: ''
+  }
+};
+
+const INBODY_PROMPT_RULES = `あなたはInBodyなどの体組成測定結果を読み取る専用アシスタントです。
+渡された画像またはテキストから、以下の追記用JSONを作成してください。
+
+ルール:
+- 出力はJSONコードブロック1つのみとし、説明・前置き・注意書きを付けない。
+- 読み取れた値だけを入力し、判別できない項目はnullとする。
+- 値を推測・補完・捏造しない。
+- 数値から単位を除き、JSONの数値型として出力する。
+- measured_atは測定日時とする。
+  - 日付のみ判明する場合は YYYY-MM-DD
+  - 時刻まで判明する場合は YYYY-MM-DDTHH:MM:SS+09:00
+- 同日に複数回測定した場合は、識別できるよう時刻まで入力する。
+- muscle_mass_kg には、InBody結果欄の「骨格筋量」または Skeletal Muscle Mass（SMM）の値を入れる。「筋肉量」「除脂肪量」「軟部除脂肪量（SLM）」を代入しない。
+- ecw_tbw は ECW/TBW（細胞外水分量／体水分量比）を入力する。直接記載がない場合のみ、ECWとTBWの両方が判読できれば計算する。
+- condition_tags と note は、画像に明示的な情報がなければ空配列・空文字列とする。
+- 体重・体脂肪率・骨格筋量が画像の記載と一致していることを内部で再確認してから出力する。`;
+
+function buildInBodyPrompt() {
+  return INBODY_PROMPT_RULES + '\n\n```json\n' + JSON.stringify(BODY_METRICS_TEMPLATE, null, 2) + '\n```';
+}
+
+async function copyInBodyPrompt() {
+  const text = buildInBodyPrompt();
+  const status = document.getElementById('inbody-copy-status');
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else {
+      // file:// / 旧ブラウザ向けフォールバック
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
+    status.textContent = '✅ コピーしました！AIに貼り、InBody結果の画像を渡してください';
+    status.className = 'text-sm ml-2 text-emerald-400';
+    setTimeout(() => { status.textContent = ''; }, 5000);
+  } catch (e) {
+    status.textContent = '❌ コピー失敗: ' + e.message + '（手動で選択コピーしてください）';
+    status.className = 'text-sm ml-2 text-red-400';
+  }
+}
+
 async function copyBriefingToClipboard() {
   const text = document.getElementById('briefing-json').textContent;
   const status = document.getElementById('briefing-copy-status');
@@ -3193,6 +3263,9 @@ function wireEvents() {
     switchTab('dashboard');
   });
   document.getElementById('btn-fulldata-cancel').addEventListener('click', closeFullDataModal);
+
+  // InBody取り込みプロンプトのコピー
+  document.getElementById('btn-copy-inbody')?.addEventListener('click', copyInBodyPrompt);
 
   // 取り込みのやり直し（退避スロットから復元）
   document.getElementById('btn-undo-import')?.addEventListener('click', () => {
