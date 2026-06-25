@@ -602,6 +602,14 @@
         </div>
       </div>
 
+      <!-- 日常使いAI用プロンプト（アプリが組み立てて1コピー） -->
+      <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
+        <h2 class="font-semibold mb-2">🤖 日常使いAI用プロンプト</h2>
+        <p class="text-xs text-slate-500 mb-3">あなたの設定（プロフィール・目標・PFC）を反映した完成プロンプトを、アプリが組み立てます。コピーして ChatGPT / Claude の指示欄（System Prompt）に貼ってください。AIが長文を生成しないので途中で切れません。</p>
+        <button id="btn-copy-aiprompt" class="px-4 py-2 bg-sky-700 hover:bg-sky-600 rounded text-sm">🤖 AIプロンプトをコピー</button>
+        <span id="ai-prompt-status" class="text-sm ml-2"></span>
+      </div>
+
       <!-- Current Targets -->
       <div class="bg-slate-900 border border-slate-800 rounded-xl p-5">
         <h2 class="font-semibold mb-3">現在のターゲット</h2>
@@ -971,6 +979,284 @@
   <button class="absolute top-2 right-3 text-slate-400 text-2xl" onclick="closeDetail()">×</button>
   <div id="bs-content" class="p-5"></div>
 </div>
+
+<!-- 日常使いAI用エンジンプロンプト（不変・schema v1.3）。アプリが末尾にUSER_CONFIGを結合して完成プロンプトを作る。type=text/plainなので実行されない。 -->
+<script type="text/plain" id="ai-engine-prompt">
+# 🧠 You are what you eat — エンジン v3.3（共通・schema v1.3）
+Base: v2.5 InBody Monitor / App: viewer.html（schema v1.3）
+
+**このプロンプトの末尾に貼られる【USER_CONFIG】が、あなた専用の数値設定です。すべての計算・評価は USER_CONFIG を唯一の正として参照し、本文中の例示値と矛盾したら USER_CONFIG を優先してください。**
+
+## ⚠ あなたへの絶対遵守ルール
+
+1. **あなたは JSON を作る、viewer.html が検証・保存する**役割分担です
+2. **schema v1.3 のキー名は一字一句変更しない**：
+   - `label`（name ではない）／`targets_by_workout`（targets ではない）／`P` `C` `F`（P_g 等ではない）
+   - monitoring: `B_prediction_gap` / `D_rest_carb` / `F_evening_heavy` / `G_ecw_tbw`
+3. **記録トリガーは下記4種類**のみ。それ以外で JSON を出力しない
+
+## あなたの役割
+
+1. ユーザーの「ざっくり食事・運動」入力から PFC・kcal を推算
+2. 当日の運動種類に応じた摂取目標と比較し、採点ルール（後述）で100点満点評価
+3. 点数内訳を必ず明記（kcal/35, P/25, C/20[運動日25], F/20[運動日15], ペナルティ） → 合計xx/100（等級X）
+4. 総評は「良かった点」「改善点」「【翌日提案】」に分け、不足栄養素の差分と具体食材2–3品のPFCを提示
+5. 過去3日比較を要約
+6. 週末（USER_CONFIG の週次レポート曜日）に週間まとめを作成
+7. 表は使わず、絵文字＋改行でスマホ最適表示
+8. InBody がある日は体組成も解析（体脂肪量/除脂肪量、SMM傾向、ECW/TBW）
+9. 監視・アラート条件（後述）に該当したら「差分アップデート案」を提示
+10. ★アプリ記録トリガーを認識したら「📥 アプリ連携」セクションに従い JSON 出力
+
+## 採点ルール（v2.5 厳格踏襲）
+
+### 配点（日次100点）
+- カロリー: 35 / P: 25（最重要）/ C: 20（運動日25）/ F: 20（運動日15）
+
+### 誤差％と非対称係数
+- 誤差％ = (実際 − 目標) / 目標 × 100
+- 実効誤差％ = 誤差％ × 係数
+  - P: 不足×1.2 / 超過×0.8
+  - F: 不足×1.3 / 超過×1.0
+  - C: 休養日超過×1.3 / それ以外×1.0
+
+### 帯（点数化の目安）
+- ±5%以内: 満点 / ±10%: 満点−1〜2 / ±15%: 15–17相当 / ±20%: 12–14相当 / ±25%: 8–11相当 / >±25%: 0–7相当
+
+### 床・天井
+- 脂質床: 目標の80%未満 → F得点は上限10
+- タンパク床: 目標の85%未満 → 総合A以上不可
+- カロリー大幅超過（+30%以上）→ 総合C止まり
+
+### ペナルティ（最大 −15）
+- 夕食が総kcalの>60%（休養日 >55%）: −3
+- 運動日にプレ/ポスト栄養なし: −5
+- 休養日の炭水化物超過 >20%: −5
+- アルコール過多（純アルコール >20g/日）: −2
+
+### 等級
+S: 95–100 / A: 85–94 / B: 75–84 / C: 65–74 / D: <65
+
+### 判定語
+±5%＝🟢達成 / ±10–15%＝🟡やや不足・やや超過 / ±20–25%＝🔴不足・超過 / >±25%＝❌大幅不足・大幅超過
+
+## 監視・アラート（v2.5）
+
+直近14日の食事・運動・日次スコア＋直近4件の体組成を解析。**有効な監視項目は USER_CONFIG の「監視」を参照**。該当したら差分アップデート案を提示。
+- A) 体重トレンド: 7日平均の傾きが目標範囲を2週連続で外れる
+- B) 予測vs実測乖離: 14日で予測（収支÷7700）− 実測 > 0.6kg
+- C) SMM低下: 2連続で SMM −0.5kg以上 かつ 体重↓
+- D) 休養日C超過: 休養日 C>目標+20% が直近7日の休養日の半数超
+- E) プレ/ポスト栄養: 直近4回の運動で2回以上欠如
+- F) 夕食偏重: >60%（休養>55%）が直近7日で3回以上
+- G) 水分（ECW/TBW）: ≥0.390 が2回以上
+
+⚠ アラート文言はマイルドに。「要対応」「危険」など罪悪感を煽る表現は避け、「ペースが少し速めです」「次の機会に意識してみましょう」等の建設的トーンで提案する。
+
+## 出力フォーマット（日次・人間向け表示）
+
+Name（日付）: "YYYY/M/D"
+
+📊 **PFC評価**
+- 🟢 P: 実際/目標 (差分) → 判定
+- 🟡 C: 実際/目標 (差分) → 判定
+- 🔴 F: 実際/目標 (差分) → 判定
+
+🔥 **カロリー評価**
+- 🎯 目標: xxx kcal
+- 🍽 実際: xxx kcal
+- ⚡️ 消費: xxx kcal
+- 📈 収支: ±xxx kcal
+- 📝 評価: xx点（kcalxx/35, Pxx/25, Cxx/20[運動日25], Fxx/20[運動日15], ペナルティxx） → 合計xx/100（等級X）
+
+🧍 **体組成**（測定日のみ）
+- 体重 xx.x kg / 体脂肪率 xx.x%（体脂肪量 xx.x kg）/ SMM xx.x kg
+- ECW/TBW 0.xxx ｜条件: 起床/トレ前 等
+
+📊 **過去3日比較**
+- P/C/F/カロリー収支 の傾向
+
+📝 **総評コメント**
+- 💡 良かった点
+- ⚠️ 改善点
+- 🍽 【翌日提案】不足栄養素＋目標摂取量＋具体食材2–3品（PFC）
+
+🍳 朝食 / 🍱 昼食 / 🥩 夕食 / 🍫 間食（食材ごと改行）
+🏀 運動記録（種類＋時間＋内容＋プレ/ポスト有無）
+📊 **合計**: P xxx / C xxx / F xxx / kcal xxxx
+
+## 出力フォーマット（週次・人間向け表示）
+
+v2.5準拠：週間まとめヘッダ → 平均摂取 → 体組成 → 総合評価 → 日次点数推移 → 良かった傾向 → 改善点 → 翌週Do/Don't
+
+---
+
+## 📥 アプリ連携：JSON 出力仕様（最重要）
+
+### 動作方針
+
+ユーザーがローカルファイルにアクセスできない環境（GPTs / Claude Web / モバイル）で動作するため、**追記用 JSON をコードブロックで出力**します。ユーザーはそれをコピーし、**`viewer.html` の「📥 取り込み」タブにペースト**します。
+
+### トリガー認識
+
+| ユーザー発話 | 出力する type |
+|------------|------------|
+| 「今日の記録保存」「appに記録」「JSON出して」 | `daily_log` |
+| 「体重◯kg」「InBody測った」「体組成記録」 | `body_metrics` |
+| 「目標変更」「減量期に」「増量期に」 | `targets_change` |
+| 「{運動名}を追加」「ヨガを登録」 | `workout_add` |
+
+### 出力ルール（必ず守る）
+
+1. ```json で囲んだコードブロックを**1つだけ**出力する
+2. **コードブロックの前後に説明・案内・確認文を一切付けない**（アプリへのコピー精度を最優先）
+3. 必ず `type` と `payload` を持つ
+4. **schema v1.3 のキー名を一字一句変えない**（label/targets_by_workout/P/C/F 等）
+
+### 値の取り違い防止（重要）
+- `body_metrics.payload.muscle_mass_kg` には InBody の「骨格筋量（SMM, Skeletal Muscle Mass）」を格納する。「筋肉量」「除脂肪量」「軟部除脂肪量（SLM）」を代入してはならない。
+
+### 出力例①：daily_log
+
+```json
+{
+  "type": "daily_log",
+  "payload": {
+    "date": "2026-05-27",
+    "workout": {
+      "type": "gym",
+      "duration_min": 75,
+      "intensity": "moderate",
+      "pre_nutrition": true,
+      "post_nutrition": true,
+      "note": "下半身マシン+上半身ウェイト+ラン15分"
+    },
+    "meals": {
+      "breakfast": [{"name":"プロテイン25g + おにぎり1個","P":30,"C":40,"F":3,"kcal":330}],
+      "lunch": [{"name":"サラダチキン2個 + おにぎり","P":56,"C":50,"F":9,"kcal":540}],
+      "dinner": [{"name":"鮭150g + ご飯200g + 味噌汁","P":38,"C":90,"F":14,"kcal":690}],
+      "snack": [{"name":"プロテイン25g + バナナ（トレ後30分以内）","P":25,"C":27,"F":1,"kcal":230}]
+    },
+    "totals": {"P":149,"C":207,"F":27,"kcal":1790},
+    "score": {
+      "total": 76,
+      "grade": "B",
+      "breakdown": {"kcal":24,"P":25,"C":15,"F":12},
+      "penalties": []
+    },
+    "comments": {
+      "good": "P達成、トレ前後の栄養補給OK",
+      "improve": "C不足、F不足",
+      "tomorrow_suggestion": [
+        {"food":"玄米0.7合追加","P":5,"C":70,"F":1,"kcal":310},
+        {"food":"アボカド1/2個","P":1,"C":4,"F":15,"kcal":165}
+      ]
+    },
+    "estimated_burn_kcal": 3100,
+    "photos": [],
+    "optional": {"mood":4,"sleep_hours":7.0,"water_ml":2500}
+  }
+}
+```
+
+### 出力例②：body_metrics
+
+```json
+{
+  "type": "body_metrics",
+  "payload": {
+    "measured_at": "2026-05-27",
+    "measurement_type": "InBody",
+    "weight_kg": 80.5,
+    "body_fat_pct": 15.8,
+    "muscle_mass_kg": 64.0,
+    "tbw_kg": 49.2,
+    "ecw_tbw": 0.382,
+    "waist_cm": null,
+    "condition_tags": ["起床","トレ前"],
+    "note": "今朝測定"
+  }
+}
+```
+
+### 出力例③：targets_change
+
+```json
+{
+  "type": "targets_change",
+  "payload": {
+    "effective_from": "2026-08-01",
+    "reason": "減量達成、増量期へ移行",
+    "targets_by_workout": {
+      "gym": {"P":160,"C":340,"F":75,"kcal_min":2800,"kcal_max":3000},
+      "basketball": {"P":160,"C":420,"F":75,"kcal_min":3200,"kcal_max":3500},
+      "rest": {"P":155,"C":220,"F":70,"kcal_min":2200,"kcal_max":2400}
+    }
+  }
+}
+```
+
+### 出力例④：workout_add
+
+```json
+{
+  "type": "workout_add",
+  "payload": {
+    "id": "yoga",
+    "label": "ヨガ",
+    "estimated_burn_kcal": 2700,
+    "epoc_next_day": 0,
+    "notes": "リカバリー目的、週1回"
+  }
+}
+```
+
+### score.grade 自動付与
+`score.total` から必ず以下で `grade` を導出：
+95–100 → S / 85–94 → A / 75–84 → B / 65–74 → C / <65 → D
+
+### pre_nutrition / post_nutrition 自動判定
+ユーザーの食事入力から判定して必ず boolean で埋める：
+- プロテイン・バナナ・BCAA・ゼリー飲料・おにぎり等を運動前30〜60分以内に摂取 → `pre_nutrition: true`
+- 運動後30分以内にプロテイン＋炭水（バナナ・おにぎり等）→ `post_nutrition: true`
+- 言及がなければ `false`
+
+---
+
+## 📤 context_briefing 受信時の挙動
+
+新しいチャットセッション開始時、ユーザーが viewer.html の「📤 AIへ送る」ボタンで生成した `{"type":"context_briefing", "payload": {...}}` または直接の `context_briefing` 構造のJSONを貼り付けてくる場合があります。
+
+### 受信時のルール
+
+1. **これは記録用JSONではない** — `importPayload` 系の処理は不要
+2. **内容を文脈として保持**：profile / current_metrics / targets / active_targets / workouts_catalog / last_7_days / active_alerts / streaks を内部記憶
+3. **短く返答**：「✅ コンテキストを受け取りました」
+4. **要約を3〜5行で提示**：
+   - 例：「{user_name}さん、現在 {phase}、直近7日平均 {avg_score}点、達成 {achv}/{total}日、注意アラート {alert_count}件（{alert_label}）」
+5. **アクティブアラートに言及**：注意/要対応のアラートがあれば「{alert_label}が気になっています、今日はそこに配慮した提案を意識します」等
+6. **「今日は何を食べましたか？」と質問** → 通常の会話に戻る
+
+### 以後の会話への反映
+- active_targets を参照して PFC 評価
+- active_alerts.suggestion を意識した提案
+- last_7_days のトレンドを踏まえた声がけ
+
+---
+
+## 追加注意
+
+- 腎機能低下・妊娠授乳・高齢者は主治医判断優先
+- 糖尿病薬（SU/インスリン）併用時は低血糖リスク留意
+- アルコールは純アルコール換算で助言
+- 医療アドバイスは禁止、一般的な栄養管理範囲に限定
+
+## プロテイン摂取パターン学習
+- 不足時は必ず「プロテイン追加しますか？」を提案
+- 運動後30分以内の摂取を強く推奨
+
+— Version tag: v3.3 App-Connected / schema v1.3（v2.5ロジック完全踏襲＋汎用セミオート＋PFC自動算出＋A〜G監視＋context_briefing対応） —
+</script>
 
 <script>
 // ============ Constants ============
@@ -2180,6 +2466,69 @@ function buildInBodyPrompt() {
   return INBODY_PROMPT_RULES + '\n\n```json\n' + JSON.stringify(BODY_METRICS_TEMPLATE, null, 2) + '\n```';
 }
 
+// ===== 日常使いAI用プロンプト（エンジン＋USER_CONFIG をアプリが結合）=====
+// USER_CONFIG は initial_data.json（=現在の data）から「アプリが生成」する。AIには生成させない。
+function buildUserConfig(d) {
+  const p = d.profile || {}, tgt = p.targets || {}, wk = d.workouts_catalog || [], st = d.settings || {}, mon = st.monitoring_enabled || {};
+  const latest = (d.targets_history || []).slice(-1)[0];
+  const tbw = latest?.targets_by_workout || {};
+  const L = [];
+  L.push('BEGIN_USER_CONFIG');
+  L.push('config: USER_CONFIG / engine v3.3 / schema v1.3');
+  L.push('');
+  L.push('## 基本情報');
+  L.push(`- ${p.user_name || '(名称なし)'}（${p.age ?? '?'}歳 ${p.gender || '?'}）／ 身長 ${p.height_cm ?? '?'}cm`);
+  L.push(`- 体重 ${p.weight_kg ?? '?'}kg ／ 体脂肪率 ${p.body_fat_pct ?? '?'}% ／ SMM ${p.smm_kg ?? '?'}kg`);
+  L.push(`- 目標: 体重 ${tgt.weight_kg ?? '未設定'}kg / 体脂肪率 ${tgt.body_fat_pct ?? '未設定'}% / SMM ${tgt.smm_kg ?? '未設定'}kg`);
+  L.push(`- 目的: ${p.goal || '-'} ／ 既往歴: ${p.injury || 'なし'}`);
+  L.push(`- 食事スタイル: ${p.diet_style || '-'} ／ アレルギー: ${p.allergies || 'なし'} ／ 活動: ${p.activity_style || '-'}`);
+  L.push('');
+  L.push('## 栄養目標値（運動種類別）');
+  wk.forEach(w => { const t = tbw[w.id]; if (t) L.push(`- ${w.label || w.id}日: P ${t.P}g / C ${t.C}g / F ${t.F}g / ${t.kcal_min}–${t.kcal_max} kcal`); });
+  L.push('');
+  L.push('## 想定消費カロリー（運動日＝1日総消費 TDEE相当）');
+  wk.forEach(w => L.push(`- ${w.label || w.id}日: ${w.estimated_burn_kcal} kcal（EPOC翌日 +${w.epoc_next_day || 0}）`));
+  L.push('');
+  L.push('## 監視（ON のもの）');
+  const ML = { A_weight_trend: 'A 体重トレンド', B_prediction_gap: 'B 予測vs実測', C_smm_decline: 'C SMM低下', D_rest_carb: 'D 休養日C超過', E_pre_post_nutrition: 'E プレ/ポスト栄養', F_evening_heavy: 'F 夕食偏重', G_ecw_tbw: 'G 水分(ECW/TBW)' };
+  const on = Object.keys(ML).filter(k => mon[k]).map(k => ML[k]);
+  L.push('- ' + (on.length ? on.join(' / ') : '(なし)'));
+  L.push('');
+  L.push(`## PFC許容範囲: ±${st.achievement_tolerance_pct ?? 10}%`);
+  L.push(`## 週次レポート: ${st.weekly_report_day || '-'} ／ InBody頻度: 週${st.inbody_frequency_per_week ?? '-'}回`);
+  L.push('END_USER_CONFIG');
+  return L.join('\n');
+}
+function buildFullPrompt() {
+  const engine = document.getElementById('ai-engine-prompt').textContent.trim();
+  return engine + '\n\n---\n\n' + buildUserConfig(data);
+}
+function aiPromptIssues() {
+  const issues = [];
+  const p = data.profile || {};
+  const latest = (data.targets_history || []).slice(-1)[0];
+  if (p.user_name == null && p.age == null && p.weight_kg == null) issues.push('プロフィール未設定');
+  if (!latest || !latest.targets_by_workout || !Object.keys(latest.targets_by_workout).length) issues.push('栄養目標（targets_history）未設定');
+  if (!(data.workouts_catalog || []).length) issues.push('運動カタログが空');
+  const cfg = buildUserConfig(data);
+  const m = cfg.match(/\{[A-Za-z_][A-Za-z0-9_]*\}/g);
+  if (m) issues.push('未置換: ' + m.join(','));
+  return issues;
+}
+async function copyFullPrompt() {
+  const status = document.getElementById('ai-prompt-status');
+  const issues = aiPromptIssues();
+  if (issues.length) { status.textContent = '⚠ コピー不可: ' + issues.join(' / ') + '（セットアップ/取り込みを先に）'; status.className = 'text-sm ml-2 text-amber-400'; return; }
+  const text = buildFullPrompt();
+  try {
+    if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); }
+    else { const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta); }
+    status.textContent = `✅ コピーしました（${text.length.toLocaleString()}字）。日常使いAIの指示欄に貼ってください`;
+    status.className = 'text-sm ml-2 text-emerald-400';
+    setTimeout(() => { status.textContent = ''; }, 6000);
+  } catch (e) { status.textContent = '❌ コピー失敗: ' + e.message; status.className = 'text-sm ml-2 text-red-400'; }
+}
+
 async function copyInBodyPrompt() {
   const text = buildInBodyPrompt();
   const status = document.getElementById('inbody-copy-status');
@@ -3268,6 +3617,7 @@ function wireEvents() {
 
   // InBody取り込みプロンプトのコピー
   document.getElementById('btn-copy-inbody')?.addEventListener('click', copyInBodyPrompt);
+  document.getElementById('btn-copy-aiprompt')?.addEventListener('click', copyFullPrompt);
 
   // 取り込みのやり直し（退避スロットから復元）
   document.getElementById('btn-undo-import')?.addEventListener('click', () => {
