@@ -2487,7 +2487,7 @@ function buildUserConfig(d) {
   wk.forEach(w => { const t = tbw[w.id]; if (t) L.push(`- ${w.label || w.id}日: P ${t.P}g / C ${t.C}g / F ${t.F}g / ${t.kcal_min}–${t.kcal_max} kcal`); });
   L.push('');
   L.push('## 想定消費カロリー（運動日＝1日総消費 TDEE相当）');
-  wk.forEach(w => L.push(`- ${w.label || w.id}日: ${w.estimated_burn_kcal} kcal（EPOC翌日 +${w.epoc_next_day || 0}）`));
+  wk.forEach(w => { if (tbw[w.id]) L.push(`- ${w.label || w.id}日: ${w.estimated_burn_kcal} kcal（EPOC翌日 +${w.epoc_next_day || 0}）`); });
   L.push('');
   L.push('## 監視（ON のもの）');
   const ML = { A_weight_trend: 'A 体重トレンド', B_prediction_gap: 'B 予測vs実測', C_smm_decline: 'C SMM低下', D_rest_carb: 'D 休養日C超過', E_pre_post_nutrition: 'E プレ/ポスト栄養', F_evening_heavy: 'F 夕食偏重', G_ecw_tbw: 'G 水分(ECW/TBW)' };
@@ -2510,6 +2510,10 @@ function aiPromptIssues() {
   if (p.user_name == null && p.age == null && p.weight_kg == null) issues.push('プロフィール未設定');
   if (!latest || !latest.targets_by_workout || !Object.keys(latest.targets_by_workout).length) issues.push('栄養目標（targets_history）未設定');
   if (!(data.workouts_catalog || []).length) issues.push('運動カタログが空');
+  // 現在の目標(targets_by_workout)にあるが workouts_catalog に無い id（消費kcalが出せない）
+  const catIds = new Set((data.workouts_catalog || []).map(w => w.id));
+  const miss = latest ? Object.keys(latest.targets_by_workout || {}).filter(id => !catIds.has(id)) : [];
+  if (miss.length) issues.push('運動カタログに無い目標: ' + miss.join(','));
   const cfg = buildUserConfig(data);
   const m = cfg.match(/\{[A-Za-z_][A-Za-z0-9_]*\}/g);
   if (m) issues.push('未置換: ' + m.join(','));
