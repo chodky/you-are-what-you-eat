@@ -14,7 +14,7 @@
  * Bump CACHE when icons / manifest change (viewer.html itself is always
  * refreshed by the network-first navigation path).
  */
-const CACHE = 'yawye-v3.2.3';
+const CACHE = 'yawye-v3.3.0';
 const ASSETS = [
   './',
   './index.html',
