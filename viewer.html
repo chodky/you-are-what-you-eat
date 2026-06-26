@@ -3129,28 +3129,35 @@ function switchTab(tabId) {
 function generateSampleData() {
   const d = emptyData();
   d.profile = {
-    user_name: 'Demo User', age: 35, gender: 'male', height_cm: 175,
+    user_name: 'あおい', age: 30, gender: 'female', height_cm: 160,
     setup_date: todayISO(),
-    initial_weight_kg: 75, initial_body_fat_pct: 18.0, initial_smm_kg: 58.0,
-    goal: '体脂肪率13%、筋力アップ',
+    initial_weight_kg: 54, initial_body_fat_pct: 26.0, initial_smm_kg: 21.0,
+    goal: '当直のある生活でも続けられる食事で、体脂肪率を下げて引き締める',
     current_phase: 'cutting_gentle',
     injury_history: 'なし',
-    diet_style: '自炊・コンビニ混合',
+    diet_style: '外食・コンビニ多め（自炊は週末）',
+    activity_style: '病院勤務（立ち仕事＋当直あり）、日中はよく歩く',
     allergies: [],
     records: { longest_streak_days: 0, longest_streak_achieved_at: null },
-    targets: { weight_kg: 70.5, body_fat_pct: 13, smm_kg: 59 }
+    targets: { weight_kg: 50, body_fat_pct: 21, smm_kg: 21 }
   };
+  // デモ用の運動カタログ（架空・女医の生活イメージ：ジム＋ヨガ＋休養）
+  d.workouts_catalog = [
+    { id: 'gym', label: 'ジム', estimated_burn_kcal: 1900, epoc_next_day: 80, notes: '' },
+    { id: 'yoga', label: 'ヨガ', estimated_burn_kcal: 1750, epoc_next_day: 20, notes: '' },
+    { id: 'rest', label: '休養', estimated_burn_kcal: 1650, epoc_next_day: 0, notes: '' }
+  ];
   d.targets_history = [{
     effective_from: todayISO(),
     reason: '初期設定（緩やか減量）',
     targets_by_workout: {
-      gym: { P: 150, C: 280, F: 60, kcal_min: 2300, kcal_max: 2500 },
-      basketball: { P: 155, C: 320, F: 65, kcal_min: 2500, kcal_max: 2700 },
-      rest: { P: 140, C: 200, F: 50, kcal_min: 1800, kcal_max: 2000 }
+      gym: { P: 110, C: 200, F: 50, kcal_min: 1650, kcal_max: 1850 },
+      yoga: { P: 110, C: 170, F: 50, kcal_min: 1500, kcal_max: 1700 },
+      rest: { P: 105, C: 140, F: 45, kcal_min: 1350, kcal_max: 1550 }
     }
   }];
   const today = new Date();
-  const cycle = ['gym', 'rest', 'basketball', 'gym', 'rest', 'rest', 'gym'];
+  const cycle = ['gym', 'rest', 'yoga', 'gym', 'rest', 'rest', 'gym'];
   for (let i = 29; i >= 0; i--) {
     const dt = new Date(today); dt.setDate(today.getDate() - i);
     const iso = isoFromDate(dt);
@@ -3172,10 +3179,10 @@ function generateSampleData() {
         note: ''
       },
       meals: {
-        breakfast: [{ name: 'オートミール40g+プロテイン25g', P: 30, C: 30, F: 4, kcal: 290 }],
-        lunch: [{ name: '鶏胸150g+ご飯0.5合+サラダ', P: 42, C: 55, F: 3, kcal: 420 }],
-        dinner: [{ name: '鮭150g+さつまいも200g+味噌汁', P: 35, C: 70, F: 12, kcal: 540 }],
-        snack: isW ? [{ name: 'プロテイン+バナナ', P: 25, C: 27, F: 1, kcal: 230 }] : []
+        breakfast: [{ name: 'ギリシャヨーグルト+プロテイン20g+バナナ', P: 28, C: 30, F: 3, kcal: 270 }],
+        lunch: [{ name: 'サラダチキン+おにぎり1個（病院コンビニ）', P: 32, C: 48, F: 4, kcal: 370 }],
+        dinner: [{ name: '鮭120g+さつまいも150g+味噌汁', P: 28, C: 55, F: 10, kcal: 430 }],
+        snack: isW ? [{ name: 'プロテイン+素焼きアーモンド', P: 20, C: 8, F: 9, kcal: 200 }] : []
       },
       totals: { P, C, F, kcal },
       score: {
@@ -3185,8 +3192,8 @@ function generateSampleData() {
         penalties: score < 80 ? [{ reason: '夕食偏重', points: -3 }] : []
       },
       comments: i === 0 ? {
-        good: 'P/F共に目標達成、トレ後ポスト栄養あり',
-        improve: '夕食比率がやや高い',
+        good: 'P確保＋当直明けでも記録を継続、えらい',
+        improve: '外食続きで夕食のCがやや多め',
         tomorrow_suggestion: [
           { food: 'ゆで卵2個', P: 12, C: 1, F: 10, kcal: 140 },
           { food: 'ギリシャヨーグルト200g', P: 18, C: 10, F: 0, kcal: 110 }
@@ -3201,15 +3208,15 @@ function generateSampleData() {
   [28, 21, 14, 0].forEach(offset => {
     const dt = new Date(today); dt.setDate(today.getDate() - offset);
     const iso = isoFromDate(dt);
-    const base = 75 - (28 - offset) * 0.10;
+    const base = 54 - (28 - offset) * 0.07;
     d.body_metrics.push({
       measured_at: iso,
       measurement_type: 'InBody',
       weight_kg: Math.round(base * 10) / 10,
-      body_fat_pct: Math.round((18.0 - (28 - offset) * 0.06) * 10) / 10,
-      muscle_mass_kg: Math.round((58.0 + (28 - offset) * 0.02) * 10) / 10,
+      body_fat_pct: Math.round((26.0 - (28 - offset) * 0.05) * 10) / 10,
+      muscle_mass_kg: Math.round((21.0 + (28 - offset) * 0.01) * 10) / 10,
       tbw_kg: null,
-      ecw_tbw: 0.383,
+      ecw_tbw: 0.385,
       waist_cm: null,
       condition_tags: offset === 0 ? ['起床', 'トレ前'] : [],
       note: offset === 0 ? '今日朝' : ''
